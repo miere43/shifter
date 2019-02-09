@@ -12,7 +12,12 @@
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "kernel32.lib")
 #pragma comment(lib, "shell32.lib")
+
+#ifndef _DEBUG
 #pragma comment(linker, "/subsystem:windows")
+#endif
+
+const wchar_t* g_current_filename = NULL;
 
 __declspec(noreturn) void panic(const wchar_t* msg, bool from_win32) {
 	const wchar_t* source = msg;
@@ -26,6 +31,14 @@ __declspec(noreturn) void panic(const wchar_t* msg, bool from_win32) {
 			source = error;
 		}
 	}
+
+	if (g_current_filename) {
+		wchar_t error[1024];
+		if (wsprintf(error, L"An error was encountered while processing file \"%s\":\r\n\r\n%s", g_current_filename, source) > 0) {
+			source = error;
+		}
+	}
+
 	MessageBoxW(0, source, L"Fatal error", MB_ICONERROR);
 	exit(1);
 }
@@ -67,29 +80,39 @@ void write_file(const wchar_t* filename, void* data, uint32_t size) {
 
 #define CP_SHIFTJIS 932
 
-int __stdcall WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* lpCmdLine, int nCmdShow) {
+#ifdef _DEBUG
+int main(int argc_, char** argv_)
+#else
+int __stdcall WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* lpCmdLine, int nCmdShow)
+#endif
+{
 	int argc = 0;
 	const wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
 	VERIFY_WIN32(argv, L"Unable to get command line arguments");
 	VERIFY(argc > 1, L"No arguments were provided.");
 
-	uint32_t source_size;
-	void* source = read_file(argv[1], &source_size);
+	for (int i = 1; i < argc; ++i) {
+		const wchar_t* filename = argv[i];
+		g_current_filename = filename;
 	
-	uint32_t in_buffer_size = source_size * sizeof(int);
-	void* in_buffer = malloc(in_buffer_size);
-	VERIFY(in_buffer, L"Out of memory");
-	int nwideconverted = MultiByteToWideChar(CP_SHIFTJIS, 0, (char*)source, source_size, (wchar_t*)in_buffer, in_buffer_size);
-	VERIFY_WIN32(nwideconverted > 0, L"Cannot convert characters");
+		uint32_t source_size;
+		void* source = read_file(argv[1], &source_size);
+		
+		uint32_t in_buffer_size = source_size * sizeof(int);
+		void* in_buffer = malloc(in_buffer_size);
+		VERIFY(in_buffer, L"Out of memory");
+		int nwideconverted = MultiByteToWideChar(CP_SHIFTJIS, MB_ERR_INVALID_CHARS, (char*)source, source_size, (wchar_t*)in_buffer, in_buffer_size);
+		VERIFY_WIN32(nwideconverted > 0, L"Cannot convert characters");
 
-	uint32_t out_buffer_size = nwideconverted * sizeof(int);
-	void* out_buffer = malloc(out_buffer_size);
-	VERIFY(out_buffer, L"Out of memory");
-	int out_written = WideCharToMultiByte(CP_UTF8, 0, (wchar_t*)in_buffer, nwideconverted, (char*)out_buffer, out_buffer_size, NULL, NULL);
-	VERIFY_WIN32(out_written > 0, L"Cannot convert characters");
+		uint32_t out_buffer_size = nwideconverted * sizeof(int);
+		void* out_buffer = malloc(out_buffer_size);
+		VERIFY(out_buffer, L"Out of memory");
+		int out_written = WideCharToMultiByte(CP_UTF8, 0, (wchar_t*)in_buffer, nwideconverted, (char*)out_buffer, out_buffer_size, NULL, NULL);
+		VERIFY_WIN32(out_written > 0, L"Cannot convert characters");
 
-	write_file(argv[1], out_buffer, out_written);
+		write_file(argv[1], out_buffer, out_written);
+	}
+
 	MessageBoxW(0, L"Finished.", L"Finished", MB_ICONINFORMATION);
-
 	return 0;
 }

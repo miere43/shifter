@@ -1,5 +1,5 @@
 @echo off
-cl shifter.c
+cl /D_DEBUG shifter.c
 IF %ERRORLEVEL% == 0 (
-	shifter.exe
+	shifter.exe Readme.txt 簡易マニュアル＆キーコンフィグ.txt
 )
